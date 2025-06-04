@@ -12,30 +12,43 @@ export default {
             const url = new URL(request.url);
             const token = url.searchParams.get('token') || "null";
 
-            if (token !== mytoken) {
-                return createResponse(nginxHTML(), 403, { 'Content-Type': 'text/html; charset=UTF-8' });
-            }
-
             const path = url.pathname.toLowerCase();
-            
+
             if (path === '/api/save') {
                 const data = await request.json();
                 const { type, index, url, description } = data;
                 await env.KV.put(`${type}_${index}`, JSON.stringify({ url, description }));
                 return createResponse(JSON.stringify({ success: true }));
             }
-            
+
             if (path === '/api/get') {
                 const data = await request.json();
                 const { type } = data;
                 const result = {};
-                for (let i = 0; i < 5; i++) {
-                    const value = await env.KV.get(`${type}_${i}`);
+                
+                // 创建一个包含所有键的数组
+                const keys = Array.from({ length: 5 }, (_, i) => `${type}_${i}`);
+                
+                // 并行获取所有数据
+                const values = await Promise.all(
+                    keys.map(async (key, index) => {
+                        const value = await env.KV.get(key);
+                        return { index, value };
+                    })
+                );
+                
+                // 处理结果
+                values.forEach(({ index, value }) => {
                     if (value) {
-                        result[i] = JSON.parse(value);
+                        result[index] = JSON.parse(value);
                     }
-                }
+                });
+                
                 return createResponse(JSON.stringify(result));
+            }
+
+            if (token !== mytoken) {
+                return createResponse(nginxHTML(), 403, { 'Content-Type': 'text/html; charset=UTF-8' });
             }
 
             return createResponse(mainHTML(url.hostname, token), 200, { 'Content-Type': 'text/html; charset=UTF-8' });
@@ -108,6 +121,52 @@ function mainHTML(domain, token) {
     <script>
         const API_BASE = '';
         const token = '${token}';
+
+        // 先加载数据，再生成UI
+        async function initialize() {
+            try {
+                // 并行加载所有数据
+                const [urlData, schemeData] = await Promise.all([
+                    (async () => {
+                        const response = await fetch(\`\${API_BASE}/api/get\`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ type: 'url' })
+                        });
+                        return response.ok ? await response.json() : {};
+                    })(),
+                    (async () => {
+                        const response = await fetch(\`\${API_BASE}/api/get\`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ type: 'scheme' })
+                        });
+                        return response.ok ? await response.json() : {};
+                    })()
+                ]);
+
+                // 生成 UI
+                generateUrlGroups();
+
+                // 填充数据
+                Object.entries(urlData).forEach(([index, item]) => {
+                    if (item) {
+                        document.getElementById(\`url\${index}\`).value = item.url || '';
+                        document.getElementById(\`urlDesc\${index}\`).value = item.description || '';
+                    }
+                });
+
+                Object.entries(schemeData).forEach(([index, item]) => {
+                    if (item) {
+                        document.getElementById(\`scheme\${index}\`).value = item.url || '';
+                        document.getElementById(\`schemeDesc\${index}\`).value = item.description || '';
+                    }
+                });
+            } catch (error) {
+                console.error('初始化失败:', error);
+                generateUrlGroups();
+            }
+        }
 
         function generateUrlGroups() {
             const urlContainer = document.getElementById('urlContainer');
@@ -184,76 +243,31 @@ function mainHTML(domain, token) {
             }
         }
 
-        async function openUrl(index) {
-            try {
-                const response = await fetch(\`\${API_BASE}/api/get\`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'url' })
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data[index] && data[index].url) {
-                        window.open(data[index].url, '_blank');
-                    }
-                }
-            } catch (error) {
-                alert('获取失败');
+        function openUrl(index) {
+            let url = document.getElementById(\`url\${index}\`).value.trim();
+            if (!url) {
+                alert('URL不能为空');
+                return;
             }
+            // 如果URL不包含协议前缀，添加https://
+            if (!/^https?:\\/\\//i.test(url)) {
+                url = 'https://' + url;
+            }
+            console.log('打开 URL:', url);
+            window.open(url, '_blank');
         }
 
-        async function openScheme(index) {
-            try {
-                const response = await fetch(\`\${API_BASE}/api/get\`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'scheme' })
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data[index] && data[index].url) {
-                        window.location.href = data[index].url;
-                    }
-                }
-            } catch (error) {
-                alert('获取失败');
+        function openScheme(index) {
+            const scheme = document.getElementById(\`scheme\${index}\`).value.trim();
+            if (!scheme) {
+                alert('URL Scheme不能为空');
+                return;
             }
+            window.location.href = scheme;
         }
 
-        async function loadSavedData() {
-            try {
-                const urlResponse = await fetch(\`\${API_BASE}/api/get\`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'url' })
-                });
-                if (urlResponse.ok) {
-                    const data = await urlResponse.json();
-                    for (const [index, item] of Object.entries(data)) {
-                        document.getElementById(\`url\${index}\`).value = item.url || '';
-                        document.getElementById(\`urlDesc\${index}\`).value = item.description || '';
-                    }
-                }
-
-                const schemeResponse = await fetch(\`\${API_BASE}/api/get\`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'scheme' })
-                });
-                if (schemeResponse.ok) {
-                    const data = await schemeResponse.json();
-                    for (const [index, item] of Object.entries(data)) {
-                        document.getElementById(\`scheme\${index}\`).value = item.url || '';
-                        document.getElementById(\`schemeDesc\${index}\`).value = item.description || '';
-                    }
-                }
-            } catch (error) {
-                console.error('加载数据失败:', error);
-            }
-        }
-
-        generateUrlGroups();
-        loadSavedData();
+        // 启动初始化
+        initialize();
     </script>
 </body>
 </html>
