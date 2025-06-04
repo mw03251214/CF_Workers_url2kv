@@ -25,10 +25,10 @@ export default {
                 const data = await request.json();
                 const { type } = data;
                 const result = {};
-                
+
                 // 创建一个包含所有键的数组
                 const keys = Array.from({ length: 5 }, (_, i) => `${type}_${i}`);
-                
+
                 // 并行获取所有数据
                 const values = await Promise.all(
                     keys.map(async (key, index) => {
@@ -36,14 +36,14 @@ export default {
                         return { index, value };
                     })
                 );
-                
+
                 // 处理结果
                 values.forEach(({ index, value }) => {
                     if (value) {
                         result[index] = JSON.parse(value);
                     }
                 });
-                
+
                 return createResponse(JSON.stringify(result));
             }
 
