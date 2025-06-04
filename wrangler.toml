@@ -1,0 +1,10 @@
+name = "cf-pages-jumpurl"
+main = "_worker.js"
+compatibility_date = "2024-05-29"
+
+[vars]
+TOKEN = "cmcc"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "ff7c6c89910f4c5b9ad7c26380599ea1" # 请替换为你的实际 KV 命名空间 ID
