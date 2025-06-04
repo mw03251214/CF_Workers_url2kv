@@ -1,6 +1,7 @@
 # Node 依赖
 node_modules/
 .wrangler/
+wrangler.toml
 
 # 环境变量
 .env
